@@ -310,7 +310,7 @@ namespace InternalAIAssistant.Services
     string question,
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
-    int topK = 1,
+    int topK = 5,
     string model = "llama3")
         {
             // 1. Detect open/general questions (not related to documents)
@@ -335,12 +335,14 @@ namespace InternalAIAssistant.Services
             // If no chunks match, still send question to LLM with empty context
             var docNames = topChunks?.Select(c => c.FileName).Distinct().ToList() ?? new List<string>();
             var contextSections = topChunks != null && topChunks.Any()
-                ? topChunks.GroupBy(c => c.FileName).Select(g => $"[Source: {g.Key}]\n" + string.Join("\n\n---\n\n", g.Select(c => c.Text))).ToList()
+                ? topChunks.GroupBy(c => c.FileName).Select(g => 
+                    $"[Source: {g.Key}, Pages: {string.Join(", ", g.Select(c => c.Page).Distinct())}]\n" + 
+                    string.Join("\n\n---\n\n", g.Select(c => c.Text))).ToList()
                 : new List<string>();
 
             string context = contextSections.Any() ? string.Join("\n\n---\n\n", contextSections) : "";
-            if (context.Length > 500)
-                context = context.Substring(0, 500);
+            if (context.Length > 2000)
+                context = context.Substring(0, 2000);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
@@ -376,11 +378,19 @@ namespace InternalAIAssistant.Services
             }
             answer = string.IsNullOrWhiteSpace(answer) ? "I couldn't find the answer in your documents." : answer.Trim();
 
-            // Sources: list only document names, one per line
-            string sources = docNames.Any() ? string.Join("\n", docNames.Select(f => $"- {f}")) : string.Empty;
+            // Sources: list document names with page numbers
+            string sources = string.Empty;
+            if (topChunks != null && topChunks.Any())
+            {
+                var sourcesByFile = topChunks
+                    .GroupBy(c => c.FileName)
+                    .Select(g => $"- {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
+                    .ToList();
+                sources = string.Join("\n", sourcesByFile);
+            }
 
-            if (docNames.Any())
-                answer += $"\n\n[Found in: {docNames.First()}]";
+            if (topChunks != null && topChunks.Any())
+                answer += $"\n\n[Found in: {topChunks.First().FileName}, Page {topChunks.First().Page}]";
             return (answer, sources);
         }
     private string GetFriendlyResponse(string question)
