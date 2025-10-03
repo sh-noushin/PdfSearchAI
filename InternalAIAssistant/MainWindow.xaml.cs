@@ -1,6 +1,7 @@
 ﻿using InternalAIAssistant.ViewModels;
 using InternalAIAssistant.Data;
 using InternalAIAssistant.Services;
+using InternalAIAssistant.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Windows;
@@ -19,17 +20,36 @@ public partial class MainWindow : Window
 
         try 
         {
-            // Load configuration
-            var configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .Build();
-
-            var connectionString = configuration.GetConnectionString("DefaultConnection");
-            
-            if (string.IsNullOrEmpty(connectionString))
+            // Check if configuration exists
+            if (!SettingsManager.HasConfiguration())
             {
-                MessageBox.Show("Connection string not found in appsettings.json", "Configuration Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                var configDialog = new ConfigurationDialog();
+                var result = configDialog.ShowDialog();
+                
+                if (result != true)
+                {
+                    MessageBox.Show("Configuration is required to run the application.", 
+                        "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                    Application.Current.Shutdown();
+                    return;
+                }
+                
+                // Save settings
+                var settings = new UserSettings 
+                { 
+                    DatabasePath = configDialog.DatabasePath 
+                };
+                SettingsManager.SaveSettings(settings);
+            }
+
+            // Load settings
+            var userSettings = SettingsManager.LoadSettings();
+            var connectionString = $"Data Source={userSettings.DatabasePath}";
+            
+            if (string.IsNullOrEmpty(userSettings.DatabasePath))
+            {
+                MessageBox.Show("Database path not configured.", "Configuration Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
@@ -39,6 +59,9 @@ public partial class MainWindow : Window
                 .Options;
 
             var dbContext = new PdfChunkDbContext(options);
+
+            // Ensure database is created
+            dbContext.Database.EnsureCreated();
 
             // Create database service
             var databaseService = new DatabaseChunkService(dbContext);
@@ -54,7 +77,8 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to initialize application: {ex.Message}", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"Failed to initialize application: {ex.Message}", "Initialization Error", 
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

@@ -10,10 +10,11 @@ namespace InternalAIAssistant.Helpers
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             var sender = value as string;
-            if (string.IsNullOrWhiteSpace(sender)) return new SolidColorBrush(Color.FromRgb(220, 220, 220));
-            if (sender == "User") return new SolidColorBrush(Color.FromRgb(255, 255, 255)); // white bubble
-            if (sender == "AI") return new SolidColorBrush(Color.FromRgb(200, 230, 255)); // light blue bubble
-            return new SolidColorBrush(Color.FromRgb(220, 220, 220)); // default gray
+            if (string.IsNullOrWhiteSpace(sender)) return new SolidColorBrush(Color.FromRgb(45, 45, 48)); // dark gray
+            if (sender == "User") return new SolidColorBrush(Color.FromRgb(30, 30, 30)); // darker bubble for user
+            if (sender == "AI") return new SolidColorBrush(Color.FromRgb(37, 37, 38)); // slightly lighter for AI
+            if (sender == "System") return new SolidColorBrush(Color.FromRgb(45, 45, 48)); // system messages
+            return new SolidColorBrush(Color.FromRgb(45, 45, 48)); // default dark gray
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
