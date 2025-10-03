@@ -3,14 +3,89 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:InternalAIAssistant"
     xmlns:helpers="clr-namespace:InternalAIAssistant.Helpers"
-    Title="AI Assistant" Height="600" Width="400">
+    Title="AI Assistant" Height="700" Width="900"
+    WindowStartupLocation="CenterScreen"
+    Background="#1e1e1e">
     <Window.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <helpers:SenderToColorConverter x:Key="SenderToColorConverter"/>
+        
+        <!-- Modern Button Style -->
+        <Style x:Key="ModernButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#0e639c"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="6" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1177bb"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#0d5a8f"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Modern TextBox Style -->
+        <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="#2d2d2d"/>
+            <Setter Property="Foreground" Value="#cccccc"/>
+            <Setter Property="BorderBrush" Value="#3e3e3e"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="CaretBrush" Value="#0e639c"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ScrollViewer x:Name="PART_ContentHost" 
+                                        Padding="{TemplateBinding Padding}"
+                                        VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#0e639c"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="#505050"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
-    <Grid Background="#f5f6fa">
-        <DockPanel>
-            <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="500" Margin="10" Name="ChatScrollViewer">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Chat Area -->
+        <Border Grid.Row="0" Background="#252526" Margin="0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" 
+                         HorizontalScrollBarVisibility="Disabled" 
+                         Padding="20"
+                         Name="ChatScrollViewer">
                 <ItemsControl ItemsSource="{Binding Messages}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -19,21 +94,67 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border CornerRadius="12" Padding="10" Margin="4" Background="{Binding Sender, Converter={StaticResource SenderToColorConverter}}">
+                            <Border CornerRadius="8" 
+                                   Padding="16,12" 
+                                   Margin="0,8"
+                                   Background="{Binding Sender, Converter={StaticResource SenderToColorConverter}}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#000000" 
+                                                     BlurRadius="8" 
+                                                     ShadowDepth="2" 
+                                                     Opacity="0.3"/>
+                                </Border.Effect>
                                 <StackPanel>
-                                    <TextBlock Text="{Binding Sender}" FontWeight="Bold" Foreground="#636e72" FontSize="13"/>
-                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#2d3436" FontSize="15"/>
+                                    <TextBlock Text="{Binding Sender}" 
+                                             FontWeight="SemiBold" 
+                                             Foreground="#e0e0e0" 
+                                             FontSize="12"
+                                             Margin="0,0,0,6"/>
+                                    <TextBlock Text="{Binding Message}" 
+                                             TextWrapping="Wrap" 
+                                             Foreground="#cccccc" 
+                                             FontSize="14"
+                                             LineHeight="22"/>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-        </DockPanel>
-        <StackPanel Orientation="Horizontal" Margin="10" VerticalAlignment="Bottom">
-            <TextBox Text="{Binding UserInput, UpdateSourceTrigger=PropertyChanged}" Width="300" Height="32" FontSize="15" Padding="6" Background="#fff" BorderBrush="#dfe6e9" BorderThickness="1"/>
-            <Button Command="{Binding SendCommand}" Content="Send" Width="70" Height="32" Margin="5,0,0,0" Background="#0984e3" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
-        </StackPanel>
-        <!-- Removed busy overlay. 'AI is thinking...' will be shown in chat instead. -->
+        </Border>
+
+        <!-- Input Area -->
+        <Border Grid.Row="1" 
+                Background="#1e1e1e" 
+                BorderBrush="#3e3e3e" 
+                BorderThickness="0,1,0,0"
+                Padding="20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox Grid.Column="0"
+                        Text="{Binding UserInput, UpdateSourceTrigger=PropertyChanged}" 
+                        Style="{StaticResource ModernTextBoxStyle}"
+                        VerticalAlignment="Center"
+                        MinHeight="44"
+                        TextWrapping="Wrap"
+                        AcceptsReturn="False">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Return" Command="{Binding SendCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+
+                <Button Grid.Column="1"
+                       Command="{Binding SendCommand}" 
+                       Content="Send" 
+                       Style="{StaticResource ModernButtonStyle}"
+                       MinWidth="80"
+                       Height="44"
+                       Margin="12,0,0,0"/>
+            </Grid>
+        </Border>
     </Grid>
 </Window>
