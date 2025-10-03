@@ -234,6 +234,10 @@ CDF_TRACE_INFO.txt
 *.db-shm
 *.db-wal
 
+# Debug and diagnostic log files
+search-debug.log
+llm-debug-context.txt
+
 # Business Intelligence projects
 *.rdl.data
 *.bim.layout

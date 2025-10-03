@@ -162,6 +162,11 @@ namespace InternalAIAssistant.Services
     {
         private readonly DatabaseChunkService _databaseService;
         private readonly OllamaApiClient _client;
+        
+        /// <summary>
+        /// Enable to write search debugging info to a file
+        /// </summary>
+        public bool EnableDebugLogging { get; set; } = false;
 
         public AIAssistant(DatabaseChunkService databaseService, string ollamaHost = "http://localhost:11434")
         {
@@ -323,13 +328,17 @@ namespace InternalAIAssistant.Services
             // 2. Get all chunks from database
             var allChunks = await _databaseService.GetAllChunksAsync();
 
-            // 3. Search top relevant chunks
+            // 3. Search top relevant chunks with optional debug logging
+            Action<string>? debugOutput = EnableDebugLogging 
+                ? msg => System.IO.File.AppendAllText("search-debug.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}\n")
+                : null;
+
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
                     SemanticSearchService.Search(allChunks, queryEmbedding, topK),
                 _ =>
-                    SimpleSearchService.Search(allChunks, question, topK)
+                    SimpleSearchService.Search(allChunks, question, topK, debugOutput)
             };
 
             // If no chunks match, still send question to LLM with empty context
