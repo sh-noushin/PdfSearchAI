@@ -1,5 +1,10 @@
 ﻿using InternalAIAssistant.ViewModels;
+using InternalAIAssistant.Data;
+using InternalAIAssistant.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using System.Windows;
+using System.IO;
 
 namespace InternalAIAssistant;
 
@@ -12,14 +17,78 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Index your documents at startup
-        var indexer = new Services.DocumentIndexer();
-        indexer.IndexFolder(@"C:\Users\admin\Nooshin\docs"); // Adjust path as needed
+        try 
+        {
+            // Load configuration
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
 
-        // Pass document chunks to the assistant
-        var assistant = new Services.AIAssistant(indexer.Chunks);
+            var connectionString = configuration.GetConnectionString("DefaultConnection");
+            
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                MessageBox.Show("Connection string not found in appsettings.json", "Configuration Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
-        // Pass the assistant to the ViewModel
-        this.DataContext = new ChatViewModel(assistant);
+            // Set up database context for SQLite
+            var options = new DbContextOptionsBuilder<PdfChunkDbContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            var dbContext = new PdfChunkDbContext(options);
+
+            // Create database service
+            var databaseService = new DatabaseChunkService(dbContext);
+
+            // Create AI assistant with database service
+            var assistant = new AIAssistant(databaseService);
+
+            // Set up ViewModel
+            this.DataContext = new ChatViewModel(assistant);
+            
+            // Show startup message with database statistics
+            LoadStatisticsAsync(databaseService);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to initialize application: {ex.Message}", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void LoadStatisticsAsync(DatabaseChunkService databaseService)
+    {
+        try 
+        {
+            var (fileCount, chunkCount) = await databaseService.GetStatisticsAsync();
+            var recentFiles = await databaseService.GetRecentFilesAsync(7);
+            
+            var viewModel = (ChatViewModel)this.DataContext;
+            viewModel.Messages.Add(new Models.ChatMessage 
+            { 
+                Sender = "System", 
+                Message = $"Connected to database. Found {chunkCount} chunks from {fileCount} files.\nRecent files (last 7 days): {recentFiles.Count}"
+            });
+            
+            if (recentFiles.Any())
+            {
+                viewModel.Messages.Add(new Models.ChatMessage 
+                { 
+                    Sender = "System", 
+                    Message = $"Recent files:\n{string.Join("\n", recentFiles.Take(5).Select(f => $"- {f}"))}"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            var viewModel = (ChatViewModel)this.DataContext;
+            viewModel?.Messages.Add(new Models.ChatMessage 
+            { 
+                Sender = "System", 
+                Message = $"Warning: Could not load database statistics: {ex.Message}"
+            });
+        }
     }
 }

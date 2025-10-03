@@ -160,12 +160,12 @@ namespace InternalAIAssistant.Services
 
     public class AIAssistant
     {
-        private readonly List<DocumentChunk> _chunks;
+        private readonly DatabaseChunkService _databaseService;
         private readonly OllamaApiClient _client;
 
-        public AIAssistant(List<DocumentChunk> chunks, string ollamaHost = "http://localhost:11434")
+        public AIAssistant(DatabaseChunkService databaseService, string ollamaHost = "http://localhost:11434")
         {
-            _chunks = chunks ?? throw new ArgumentNullException(nameof(chunks));
+            _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
             _client = new OllamaApiClient(ollamaHost);
         }
 
@@ -310,43 +310,57 @@ namespace InternalAIAssistant.Services
     string question,
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
-    int topK = 3,
+    int topK = 1,
     string model = "llama3")
         {
-            // 1. Search top relevant chunks
+            // 1. Detect open/general questions (not related to documents)
+            if (IsGeneralQuestion(question))
+            {
+                // Only respond instantly for greetings and direct assistant questions
+                return (GetFriendlyResponse(question), string.Empty);
+            }
+
+            // 2. Get all chunks from database
+            var allChunks = await _databaseService.GetAllChunksAsync();
+
+            // 3. Search top relevant chunks
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
-                    SemanticSearchService.Search(_chunks, queryEmbedding, topK),
+                    SemanticSearchService.Search(allChunks, queryEmbedding, topK),
                 _ =>
-                    SimpleSearchService.Search(_chunks, question, topK)
+                    SimpleSearchService.Search(allChunks, question, topK)
             };
 
-            if (topChunks == null || !topChunks.Any())
-                return ("I couldn't find the answer in your documents.", string.Empty);
+            // If no chunks match, still send question to LLM with empty context
+            var docNames = topChunks?.Select(c => c.FileName).Distinct().ToList() ?? new List<string>();
+            var contextSections = topChunks != null && topChunks.Any()
+                ? topChunks.GroupBy(c => c.FileName).Select(g => $"[Source: {g.Key}]\n" + string.Join("\n\n---\n\n", g.Select(c => c.Text))).ToList()
+                : new List<string>();
 
-            // 2. Gather unique document names
-            var docNames = topChunks
-                .Select(c => c.FileName)
-                .Distinct()
-                .ToList();
+            string context = contextSections.Any() ? string.Join("\n\n---\n\n", contextSections) : "";
+            if (context.Length > 500)
+                context = context.Substring(0, 500);
 
-            // 3. Build context grouped by file (all relevant text per file)
-            var contextSections = topChunks
-                .GroupBy(c => c.FileName)
-                .Select(g => $"[Source: {g.Key}]\n" + string.Join("\n\n---\n\n", g.Select(c => c.Text)))
-                .ToList();
-
-            string context = string.Join("\n\n---\n\n", contextSections);
-
-            // 4. Compose the LLM prompt
-            string prompt =
-                "You are an expert software assistant. " +
-                "Answer the user's question using only the information below. " +
-                "If helpful, provide a brief definition, example, and list any key points. " +
-                "If there are code snippets in the context, include them in your answer. " +
-                "If the answer is not present, reply: 'I couldn't find the answer in your documents.'\n\n" +
-                $"Context:\n{context}\n\nQuestion: {question}";
+            string prompt;
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                prompt =
+                    "You are an expert software assistant. " +
+                    "Answer the user's question using only the information below. " +
+                    "If helpful, provide a brief definition, example, and list any key points. " +
+                    "If there are code snippets in the context, include them in your answer. " +
+                    "If the answer is not present, reply: 'I couldn't find the answer in your documents.'\n\n" +
+                    $"Context:\n{context}\n\nQuestion: {question}";
+            }
+            else
+            {
+                prompt =
+                    "You are an expert software assistant. " +
+                    "Answer the user's question as helpfully as possible. " +
+                    "If you know the answer, explain it clearly. If you don't, say so honestly." +
+                    $"\n\nQuestion: {question}";
+            }
 
             var request = new GenerateRequest
             {
@@ -362,60 +376,84 @@ namespace InternalAIAssistant.Services
             }
             answer = string.IsNullOrWhiteSpace(answer) ? "I couldn't find the answer in your documents." : answer.Trim();
 
-            // 5. Sources: list only document names, one per line
-            string sources = string.Join("\n", docNames.Select(f => $"- {f}"));
+            // Sources: list only document names, one per line
+            string sources = docNames.Any() ? string.Join("\n", docNames.Select(f => $"- {f}")) : string.Empty;
 
+            if (docNames.Any())
+                answer += $"\n\n[Found in: {docNames.First()}]";
             return (answer, sources);
         }
-
-
-
-        /// <summary>
-        /// Summarizes or explains the entire document (or up to maxPages).
-        /// </summary>
-        /// <param name="fileName">The PDF or DOCX file name (must be in the chunks)</param>
-        /// <param name="maxPages">Maximum number of pages to include as context (default 10)</param>
-        /// <param name="model">LLM model to use</param>
-        /// <returns>Tuple of (summary, sources)</returns>
-        public async Task<(string Answer, string Sources)> SummarizeDocumentAsync(
-            string fileName,
-            int maxPages = 10,
-            string model = "llama3")
-        {
-            // Find all chunks for the file, ordered by page
-            var fileChunks = _chunks
-                .Where(c => c.FileName == fileName)
-                .OrderBy(c => c.Page)
-                .Take(maxPages)
-                .ToList();
-
-            if (!fileChunks.Any())
-                return ("No content found in the selected document.", "");
-
-            var contextSections = fileChunks.Select(c =>
-                $"[Source: {c.FileName}, page {c.Page}]\n{PdfHelper.ExtractPageText(c.FileName, c.Page)}").ToList();
-
-            string context = string.Join("\n\n---\n\n", contextSections);
-
-            string prompt =
-                $"Summarize and explain the following document using only the provided context. " +
-                $"If the context is too long, focus on the main ideas and key points.\n\nContext:\n{context}";
-
-            var request = new GenerateRequest
-            {
-                Model = model,
-                Prompt = prompt
-            };
-
-            string answer = "";
-            await foreach (var chunk in _client.GenerateAsync(request))
-            {
-                if (chunk?.Response != null)
-                    answer += chunk.Response;
-            }
-            answer = string.IsNullOrWhiteSpace(answer) ? "No summary could be generated." : answer.Trim();
-            string sources = string.Join("\n", fileChunks.Select(c => $"- {c.FileName}, page {c.Page}"));
-            return (answer, sources);
-        }
+    private string GetFriendlyResponse(string question)
+    {
+        var lower = question.ToLowerInvariant();
+        if (lower.Contains("hi") || lower.Contains("hello") || lower.Contains("hey"))
+            return "Hello! How can I help you today?";
+        if (lower.Contains("who are you") || lower.Contains("your name"))
+            return "I'm your AI assistant, here to help you search and summarize your documents.";
+        if (lower.Contains("what can you do"))
+            return "I can answer questions and summarize information from your PDF documents. Just ask me about any topic covered in your files!";
+        // Default friendly response
+        return "I'm here to help! Ask me anything about your documents, or just chat.";
     }
+
+    private bool IsGeneralQuestion(string question)
+    {
+        // Strict heuristic: only greetings and direct assistant questions
+        var lower = question.ToLowerInvariant();
+        if (lower.Contains("hi") || lower.Contains("hello") || lower.Contains("hey") || lower.Contains("good morning") || lower.Contains("good evening") || lower.Contains("good afternoon"))
+            return true;
+        if (lower.Contains("who are you") || lower.Contains("your name") || lower.Contains("are you assistant") || lower.Contains("what can you do") || lower.Contains("how do you work") || lower.Contains("what is your job") || lower.Contains("are you real") || lower.Contains("what are you"))
+            return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Summarizes or explains the entire document (or up to maxPages).
+    /// </summary>
+    /// <param name="fileName">The PDF or DOCX file name (must be in the chunks)</param>
+    /// <param name="maxPages">Maximum number of pages to include as context (default 10)</param>
+    /// <param name="model">LLM model to use</param>
+    /// <returns>Tuple of (summary, sources)</returns>
+    public async Task<(string Answer, string Sources)> SummarizeDocumentAsync(
+        string fileName,
+        int maxPages = 10,
+        string model = "llama3")
+    {
+        // Find all chunks for the file from database
+        var fileChunks = await _databaseService.GetChunksByFileAsync(fileName);
+        fileChunks = fileChunks
+            .OrderBy(c => c.Page)
+            .Take(maxPages)
+            .ToList();
+
+        if (!fileChunks.Any())
+            return ("No content found in the selected document.", "");
+
+        var contextSections = fileChunks.Select(c =>
+            $"[Source: {c.FileName}, page {c.Page}]\n{c.Text}").ToList();
+
+        string context = string.Join("\n\n---\n\n", contextSections);
+
+        string prompt =
+            $"Summarize and explain the following document using only the provided context. " +
+            $"If the context is too long, focus on the main ideas and key points.\n\nContext:\n{context}";
+
+        var request = new GenerateRequest
+        {
+            Model = model,
+            Prompt = prompt
+        };
+
+        string answer = "";
+        await foreach (var chunk in _client.GenerateAsync(request))
+        {
+            if (chunk?.Response != null)
+                answer += chunk.Response;
+        }
+        answer = string.IsNullOrWhiteSpace(answer) ? "No summary could be generated." : answer.Trim();
+        string sources = string.Join("\n", fileChunks.Select(c => $"- {c.FileName}, page {c.Page}"));
+        return (answer, sources);
+    }
+}
+
 }

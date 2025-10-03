@@ -146,7 +146,7 @@ namespace InternalAIAssistant.ViewModels
 
         public ObservableCollection<ChatMessage> Messages { get; } = new ObservableCollection<ChatMessage>();
 
-        private string _userInput;
+        private string _userInput = string.Empty;
         public string UserInput
         {
             get => _userInput;
@@ -163,8 +163,7 @@ namespace InternalAIAssistant.ViewModels
         public ICommand SendCommand { get; }
         public ICommand SummarizeCommand { get; }
 
-        // Assume you have a way for the user to select a document file name
-        private string _selectedFileName;
+        private string _selectedFileName = string.Empty;
         public string SelectedFileName
         {
             get => _selectedFileName;
@@ -175,7 +174,7 @@ namespace InternalAIAssistant.ViewModels
         {
             _assistant = assistant;
             SendCommand = new RelayCommand(async _ => await SendAsync(), _ => !string.IsNullOrWhiteSpace(UserInput) && !IsBusy);
-            SummarizeCommand = new RelayCommand(async _ => await SummarizeAsync(), _ => !string.IsNullOrWhiteSpace(SelectedFileName) && !IsBusy);
+            // Do NOT send any system/AI message on startup
         }
 
         private async Task SendAsync()
@@ -184,9 +183,12 @@ namespace InternalAIAssistant.ViewModels
             Messages.Add(new ChatMessage { Sender = "User", Message = question });
             UserInput = string.Empty;
             IsBusy = true;
+            var thinkingMsg = new ChatMessage { Sender = "AI", Message = "AI is thinking..." };
+            Messages.Add(thinkingMsg);
             try
             {
                 var (answer, sources) = await _assistant.AskAsync(question);
+                Messages.Remove(thinkingMsg);
                 Messages.Add(new ChatMessage { Sender = "AI", Message = answer });
                 if (!string.IsNullOrWhiteSpace(sources))
                     Messages.Add(new ChatMessage { Sender = "AI", Message = $"Sources:\n{sources}" });
