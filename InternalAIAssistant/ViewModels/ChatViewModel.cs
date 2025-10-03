@@ -190,8 +190,16 @@ namespace InternalAIAssistant.ViewModels
                 var (answer, sources) = await _assistant.AskAsync(question);
                 Messages.Remove(thinkingMsg);
                 Messages.Add(new ChatMessage { Sender = "AI", Message = answer });
+                
+                // Display detailed sources if available
                 if (!string.IsNullOrWhiteSpace(sources))
-                    Messages.Add(new ChatMessage { Sender = "AI", Message = $"Sources:\n{sources}" });
+                {
+                    Messages.Add(new ChatMessage 
+                    { 
+                        Sender = "AI", 
+                        Message = $"📚 **Additional Sources**:\n{sources}" 
+                    });
+                }
             }
             finally
             {
@@ -206,8 +214,16 @@ namespace InternalAIAssistant.ViewModels
             {
                 var (summary, sources) = await _assistant.SummarizeDocumentAsync(SelectedFileName, maxPages: 10);
                 Messages.Add(new ChatMessage { Sender = "AI", Message = $"Summary of {SelectedFileName}:\n{summary}" });
+                
+                // Display detailed sources if available
                 if (!string.IsNullOrWhiteSpace(sources))
-                    Messages.Add(new ChatMessage { Sender = "AI", Message = $"Sources:\n{sources}" });
+                {
+                    Messages.Add(new ChatMessage 
+                    { 
+                        Sender = "AI", 
+                        Message = $"📚 **Additional Sources**:\n{sources}" 
+                    });
+                }
             }
             finally
             {

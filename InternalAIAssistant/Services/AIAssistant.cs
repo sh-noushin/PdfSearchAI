@@ -393,13 +393,18 @@ namespace InternalAIAssistant.Services
             {
                 var sourcesByFile = topChunks
                     .GroupBy(c => c.FileName)
-                    .Select(g => $"- {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
+                    .Select(g => $"📄 {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
                     .ToList();
                 sources = string.Join("\n", sourcesByFile);
             }
 
+            // Add inline source citation to the answer for immediate visibility
             if (topChunks != null && topChunks.Any())
-                answer += $"\n\n[Found in: {topChunks.First().FileName}, Page {topChunks.First().Page}]";
+            {
+                var primarySource = topChunks.First();
+                answer += $"\n\n📌 **Source**: {primarySource.FileName}, Page {primarySource.Page}";
+            }
+            
             return (answer, sources);
         }
     private string GetFriendlyResponse(string question)
@@ -470,7 +475,12 @@ namespace InternalAIAssistant.Services
                 answer += chunk.Response;
         }
         answer = string.IsNullOrWhiteSpace(answer) ? "No summary could be generated." : answer.Trim();
-        string sources = string.Join("\n", fileChunks.Select(c => $"- {c.FileName}, page {c.Page}"));
+        
+        // Add source information to answer
+        var pages = fileChunks.Select(c => c.Page).Distinct().OrderBy(p => p).ToList();
+        answer += $"\n\n📌 **Source**: {fileName} (Pages: {string.Join(", ", pages)})";
+        
+        string sources = string.Join("\n", fileChunks.Select(c => $"📄 {c.FileName}, page {c.Page}"));
         return (answer, sources);
     }
 }
