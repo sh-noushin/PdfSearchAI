@@ -356,7 +356,7 @@ namespace InternalAIAssistant.Services
             else
             {
                 // No relevant chunk found, use helpful fallback
-                return ("I couldn't find an answer in your documents. Try asking about Python basics, machine learning fundamentals, or deep learning with PyTorch. If you need help with something else, please be more specific!", string.Empty);
+                return ("I couldn't find an answer in your documents. Please ask a question related to the content of your documents for best results.", string.Empty);
             }
 
             // Run LLM call on a background thread to avoid UI blocking
