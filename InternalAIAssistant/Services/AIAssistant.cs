@@ -69,17 +69,18 @@ namespace InternalAIAssistant.Services
                 if (System.Text.RegularExpressions.Regex.IsMatch(question, "[\u0600-\u06FF]"))
                     langInstruction = "لطفاً به همان زبان سوال پاسخ دهید."; // Persian
                 else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüß]|\b(der|die|das|und|ist|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|war|sein|hat|haben|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|ihr|ihre|ihren|ihrem|ihres|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|ihr|ihre|ihren|ihrem|ihres|es|am|im|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|mit|durch|gegenüber|entlang|ab|an|auf|aus|bei|bis|durch|für|gegen|hinter|in|neben|über|unter|vor|zwischen)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                    langInstruction = "Bitte antworte in deutscher Sprache."; // German
+                    langInstruction = "ACHTUNG: Du MUSST ausschließlich auf Deutsch antworten. Verwende KEINE englischen Wörter oder Sätze. Wenn du auf Englisch antwortest, ist die Antwort FALSCH. Antworte NUR auf Deutsch, egal was passiert."; // German
                 else
                     langInstruction = "Please answer in English.";
 
                 prompt =
+                    "SYSTEM: You are strictly required to answer ONLY in the language specified below. Do NOT use English. If you answer in English, you will fail the task.\n" +
+                    langInstruction + "\n" +
                     "You are an expert software assistant. " +
                     "Answer the user's question using only the information below. " +
-                    "If helpful, provide a brief definition, example, and list any key points. " +
-                    "If there are code snippets in the context, include them in your answer. " +
-                    "If the answer is not present, reply: 'I couldn't find the answer in your documents.'\n\n" +
-                    "Always answer in the same language as the user's question. " + langInstruction + "\n\n" +
+                    "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
+                    "Do NOT mention code snippets unless there is actual code in the context. " +
+                    "If the answer is not present, reply: 'Ich konnte die Antwort in Ihren Dokumenten nicht finden.'\n\n" +
                     $"Context:\n{context}\n\nQuestion: {question}";
             }
             else
