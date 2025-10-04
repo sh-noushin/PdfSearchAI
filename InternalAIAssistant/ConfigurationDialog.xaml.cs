@@ -12,25 +12,21 @@ namespace InternalAIAssistant
         {
             InitializeComponent();
             
-            // Set default path
-            var defaultPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "PdfSearchAI",
-                "pdfchunks.db"
-            );
-            DatabasePathTextBox.Text = defaultPath;
-            DatabasePath = defaultPath;
+            // Don't set a default path - user must browse for existing database
+            DatabasePathTextBox.Text = "Click 'Browse...' to select your database file";
+            DatabasePath = string.Empty;
         }
 
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new SaveFileDialog
+            var dialog = new OpenFileDialog
             {
-                Title = "Select Database Location",
+                Title = "Select Existing Database File",
                 Filter = "Database Files (*.db)|*.db|All Files (*.*)|*.*",
                 DefaultExt = ".db",
                 FileName = "pdfchunks.db",
-                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                CheckFileExists = true
             };
 
             if (dialog.ShowDialog() == true)
@@ -42,29 +38,11 @@ namespace InternalAIAssistant
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(DatabasePathTextBox.Text))
+            if (string.IsNullOrWhiteSpace(DatabasePath) || !File.Exists(DatabasePath))
             {
-                MessageBox.Show("Please select a database location.", "Configuration Error", 
+                MessageBox.Show("Please browse and select an existing database file.", "Configuration Error", 
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
-            }
-
-            DatabasePath = DatabasePathTextBox.Text;
-
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(DatabasePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                try
-                {
-                    Directory.CreateDirectory(directory);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to create directory: {ex.Message}", "Error", 
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
             }
 
             DialogResult = true;
