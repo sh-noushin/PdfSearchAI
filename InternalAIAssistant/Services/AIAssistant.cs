@@ -27,7 +27,11 @@ namespace InternalAIAssistant.Services
         public AIAssistant(DatabaseChunkService databaseService, string ollamaHost = "http://localhost:11434")
         {
             _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
-            _client = new OllamaApiClient(ollamaHost);
+            var httpClient = new System.Net.Http.HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(120) // 2 minute timeout to prevent long waits
+            };
+            _client = new OllamaApiClient(httpClient, ollamaHost);
         }
 
  public async Task<(string Answer, string Sources)> AskAsync(
@@ -35,7 +39,7 @@ namespace InternalAIAssistant.Services
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
     int topK = 5,
-    string model = "llama3")
+    string model = "phi3")
         {
             // Always search chunks for every question
             var allChunks = await _databaseService.GetAllChunksAsync();
@@ -58,23 +62,32 @@ namespace InternalAIAssistant.Services
             string context = topChunks != null && topChunks.Any()
                 ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
                 : "";
-            if (context.Length > 3000)
-                context = context.Substring(0, 3000);
+            if (context.Length > 2000)
+                context = context.Substring(0, 2000);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
             {
                 string langInstruction = "";
-                // Improved heuristic: detect Persian, German, or English
+                // Improved language detection: detect Persian, German, or default to English
+                // Persian detection - check for Persian Unicode characters
                 if (System.Text.RegularExpressions.Regex.IsMatch(question, "[\u0600-\u06FF]"))
-                    langInstruction = "لطفاً به همان زبان سوال پاسخ دهید."; // Persian
-                else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüß]|\b(der|die|das|und|ist|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|war|sein|hat|haben|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|ihr|ihre|ihren|ihrem|ihres|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|ihr|ihre|ihren|ihrem|ihres|es|am|im|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|mit|durch|gegenüber|entlang|ab|an|auf|aus|bei|bis|durch|für|gegen|hinter|in|neben|über|unter|vor|zwischen)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                    langInstruction = "ACHTUNG: Du MUSST ausschließlich auf Deutsch antworten. Verwende KEINE englischen Wörter oder Sätze. Wenn du auf Englisch antwortest, ist die Antwort FALSCH. Antworte NUR auf Deutsch, egal was passiert."; // German
+                {
+                    langInstruction = "مهم: شما باید به زبان فارسی پاسخ دهید. از کلمات یا جملات انگلیسی استفاده نکنید. فقط به زبان فارسی پاسخ دهید."; // Persian
+                }
+                // German detection - check for German characters and common words
+                else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
+                         System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    langInstruction = "WICHTIG: Sie MÜSSEN ausschließlich auf Deutsch antworten. Verwenden Sie KEINE englischen Wörter oder Sätze. Antworten Sie NUR auf Deutsch."; // German
+                }
                 else
-                    langInstruction = "Please answer in English.";
+                {
+                    langInstruction = "IMPORTANT: Please answer in English.";
+                }
 
                 prompt =
-                    "SYSTEM: You are strictly required to answer ONLY in the language specified below. Do NOT use English. If you answer in English, you will fail the task.\n" +
+                    "SYSTEM: You are strictly required to answer ONLY in the language specified below. Match the user's language exactly.\n" +
                     langInstruction + "\n" +
                     "You are an expert software assistant. " +
                     "Answer the user's question using ONLY the information below. Do NOT use any safety filter or fallback unless the context itself contains a warning or restriction. " +
@@ -82,7 +95,7 @@ namespace InternalAIAssistant.Services
                     "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
                     "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
                     "Do NOT mention code snippets unless there is actual code in the context. " +
-                    "Only reply 'Ich konnte die Antwort in Ihren Dokumenten nicht finden.' if there is absolutely no relevant information in the context.\n\n" +
+                    "Only reply 'I couldn't find the answer in your documents.' if there is absolutely no relevant information in the context.\n\n" +
                     $"Context:\n{context}\n\nQuestion: {question}";
             }
             else
@@ -149,7 +162,7 @@ namespace InternalAIAssistant.Services
     public async Task<(string Answer, string Sources)> SummarizeDocumentAsync(
         string fileName,
         int maxPages = 10,
-        string model = "llama3")
+        string model = "phi3")
     {
         // Find all chunks for the file from database
         var fileChunks = await _databaseService.GetChunksByFileAsync(fileName);
