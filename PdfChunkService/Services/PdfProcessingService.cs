@@ -137,7 +137,6 @@ public class PdfProcessingService
     private List<(string Text, int PageNumber)> ExtractTextFromPdf(string filePath, string fileName)
     {
         var results = new List<(string, int)>();
-        
         try
         {
             using (var document = PdfDocument.Open(filePath))
@@ -148,7 +147,24 @@ public class PdfProcessingService
                     string text = page.Text;
                     if (!string.IsNullOrWhiteSpace(text))
                     {
-                        results.Add((text, pageNum));
+                        // Split by paragraph (double newline) or every 500 chars
+                        var paragraphs = text.Split(new[] { "\r\n\r\n", "\n\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var para in paragraphs)
+                        {
+                            var trimmed = para.Trim();
+                            if (trimmed.Length > 0)
+                            {
+                                // If paragraph is long, split every 500 chars
+                                int start = 0;
+                                while (start < trimmed.Length)
+                                {
+                                    int len = Math.Min(500, trimmed.Length - start);
+                                    string chunk = trimmed.Substring(start, len);
+                                    results.Add((chunk, pageNum));
+                                    start += len;
+                                }
+                            }
+                        }
                     }
                     pageNum++;
                 }
@@ -158,7 +174,6 @@ public class PdfProcessingService
         {
             Log.Error(ex, "Error extracting text from PDF: {FilePath}", filePath);
         }
-
         return results;
     }
 
