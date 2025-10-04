@@ -11,18 +11,20 @@ public class Worker : BackgroundService
     private readonly IConfigurationService _configurationService;
     private readonly IPdfProcessingService _pdfProcessingService;
     private readonly IServiceProvider _serviceProvider;
-    private ServiceConfiguration? _serviceConfig;
+    private readonly ServiceConfiguration _serviceConfig;
 
     public Worker(
         ILogger<Worker> logger,
         IConfigurationService configurationService,
         IPdfProcessingService pdfProcessingService,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        ServiceConfiguration serviceConfig)
     {
         _logger = logger;
         _configurationService = configurationService;
         _pdfProcessingService = pdfProcessingService;
         _serviceProvider = serviceProvider;
+        _serviceConfig = serviceConfig;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,20 +95,8 @@ public class Worker : BackgroundService
 
     private async Task InitializeConfigurationAsync()
     {
-        try
-        {
-            _serviceConfig = await _configurationService.LoadConfigurationAsync();
-            if (_serviceConfig == null)
-            {
-                _logger.LogError("Failed to obtain configuration interactively. Service cannot continue.");
-                return;
-            }
-            _logger.LogInformation("Service configuration loaded - Directory: {DirectoryPath}, DB: {DB}, Scan Interval: {ScanInterval} days", 
-                _serviceConfig.DirectoryPath, _serviceConfig.ConnectionString, _serviceConfig.ScanIntervalDays);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize configuration");
-        }
+        // No-op: config is injected via DI
+        _logger.LogInformation("Service configuration loaded - Directory: {DirectoryPath}, DB: {DB}, Scan Interval: {ScanInterval} days", 
+            _serviceConfig.DirectoryPath, _serviceConfig.ConnectionString, _serviceConfig.ScanIntervalDays);
     }
 }

@@ -20,39 +20,8 @@ public class ConfigurationService : IConfigurationService
 
     public Task<ServiceConfiguration?> LoadConfigurationAsync()
     {
-        // Always prompt interactively
-        Console.WriteLine("PDF Chunk Service Setup:");
-        Console.WriteLine("Enter the full path to your PDF directory:");
-        string? pdfPath = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(pdfPath) || !Directory.Exists(pdfPath))
-        {
-            Console.WriteLine("Invalid PDF directory. Exiting.");
-            return Task.FromResult<ServiceConfiguration?>(null);
-        }
-        Console.WriteLine("Enter the full path and filename for your database (e.g. C:\\MyData\\mydb.db):");
-        string? dbPath = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(dbPath))
-        {
-            Console.WriteLine("Invalid database path. Exiting.");
-            return Task.FromResult<ServiceConfiguration?>(null);
-        }
-        Console.WriteLine("How many days between scans? (default 3):");
-        string? scanDaysStr = Console.ReadLine();
-        int scanDays = 3;
-        int.TryParse(scanDaysStr, out scanDays);
-        Console.WriteLine("How many characters per chunk? (default 1000):");
-        string? chunkSizeStr = Console.ReadLine();
-        int chunkSize = 1000;
-        int.TryParse(chunkSizeStr, out chunkSize);
-
-        var config = new ServiceConfiguration
-        {
-            DirectoryPath = pdfPath,
-            ScanIntervalDays = scanDays,
-            ChunkSize = chunkSize,
-            ConnectionString = $"Data Source={dbPath}"
-        };
-        return Task.FromResult<ServiceConfiguration?>(config);
+        // Return null, config is injected via DI
+        return Task.FromResult<ServiceConfiguration?>(null);
     }
 
     public Task SaveConfigurationAsync(ServiceConfiguration configuration)

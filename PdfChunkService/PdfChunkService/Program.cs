@@ -75,6 +75,15 @@ try
     // Register Worker
     builder.Services.AddHostedService<Worker>();
 
+    // Register Worker with ServiceConfiguration injected
+    builder.Services.AddHostedService<Worker>(provider =>
+        new Worker(
+            provider.GetRequiredService<ILogger<Worker>>(),
+            provider.GetRequiredService<IConfigurationService>(),
+            provider.GetRequiredService<IPdfProcessingService>(),
+            provider,
+            config));
+
     // Register as Windows Service (for .NET 8+)
     builder.Services.AddWindowsService(options =>
     {
