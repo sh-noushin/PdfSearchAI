@@ -20,27 +20,24 @@ public partial class MainWindow : Window
 
         try 
         {
-            // Check if configuration exists
-            if (!SettingsManager.HasConfiguration())
+            // Always show configuration dialog at startup
+            var configDialog = new ConfigurationDialog();
+            var result = configDialog.ShowDialog();
+            
+            if (result != true)
             {
-                var configDialog = new ConfigurationDialog();
-                var result = configDialog.ShowDialog();
-                
-                if (result != true)
-                {
-                    MessageBox.Show("Configuration is required to run the application.", 
-                        "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Information);
-                    Application.Current.Shutdown();
-                    return;
-                }
-                
-                // Save settings
-                var settings = new UserSettings 
-                { 
-                    DatabasePath = configDialog.DatabasePath 
-                };
-                SettingsManager.SaveSettings(settings);
+                MessageBox.Show("Configuration is required to run the application.", 
+                    "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                Application.Current.Shutdown();
+                return;
             }
+            
+            // Save settings
+            var settings = new UserSettings 
+            { 
+                DatabasePath = configDialog.DatabasePath 
+            };
+            SettingsManager.SaveSettings(settings);
 
             // Load settings
             var userSettings = SettingsManager.LoadSettings();
@@ -114,5 +111,52 @@ public partial class MainWindow : Window
                 Message = $"Warning: Could not load database statistics: {ex.Message}"
             });
         }
+    }
+
+    private void ChangeDatabase_Click(object sender, RoutedEventArgs e)
+    {
+        var configDialog = new ConfigurationDialog();
+        var result = configDialog.ShowDialog();
+        
+        if (result == true)
+        {
+            // Save new settings
+            var settings = new UserSettings 
+            { 
+                DatabasePath = configDialog.DatabasePath 
+            };
+            SettingsManager.SaveSettings(settings);
+
+            // Show restart message
+            var restartResult = MessageBox.Show(
+                "Database configuration updated. The application needs to restart to apply the changes.\n\nRestart now?",
+                "Restart Required",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information
+            );
+
+            if (restartResult == MessageBoxResult.Yes)
+            {
+                // Restart the application
+                System.Diagnostics.Process.Start(Application.ResourceAssembly.Location);
+                Application.Current.Shutdown();
+            }
+        }
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e)
+    {
+        Application.Current.Shutdown();
+    }
+
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
+        MessageBox.Show(
+            "PDF Search AI Assistant\n\nA desktop application for searching and querying PDF documents using AI.\n\n" +
+            "This application uses a database of PDF chunks created by the PdfChunkService to provide intelligent responses to your questions.",
+            "About PDF Search AI",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information
+        );
     }
 }

@@ -1,6 +1,8 @@
 using System.Windows;
 using Microsoft.Win32;
 using System.IO;
+using Microsoft.EntityFrameworkCore;
+using InternalAIAssistant.Data;
 
 namespace InternalAIAssistant
 {
@@ -12,59 +14,103 @@ namespace InternalAIAssistant
         {
             InitializeComponent();
             
-            // Set default path
-            var defaultPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "PdfSearchAI",
-                "pdfchunks.db"
-            );
-            DatabasePathTextBox.Text = defaultPath;
-            DatabasePath = defaultPath;
+            // Clear the text box - user must select a file
+            DatabasePathTextBox.Text = "Please select a database file...";
+            DatabasePath = string.Empty;
         }
 
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new SaveFileDialog
+            var dialog = new OpenFileDialog
             {
-                Title = "Select Database Location",
+                Title = "Select Existing Database File",
                 Filter = "Database Files (*.db)|*.db|All Files (*.*)|*.*",
                 DefaultExt = ".db",
-                FileName = "pdfchunks.db",
+                CheckFileExists = true,
+                CheckPathExists = true,
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
             };
 
             if (dialog.ShowDialog() == true)
             {
-                DatabasePathTextBox.Text = dialog.FileName;
-                DatabasePath = dialog.FileName;
+                if (ValidateDatabase(dialog.FileName))
+                {
+                    DatabasePathTextBox.Text = dialog.FileName;
+                    DatabasePath = dialog.FileName;
+                }
+            }
+        }
+
+        private bool ValidateDatabase(string databasePath)
+        {
+            try
+            {
+                var connectionString = $"Data Source={databasePath}";
+                var options = new DbContextOptionsBuilder<PdfChunkDbContext>()
+                    .UseSqlite(connectionString)
+                    .Options;
+
+                using var context = new PdfChunkDbContext(options);
+                
+                // Check if database can be opened and has required tables
+                if (context.Database.CanConnect())
+                {
+                    // Try to query the tables to ensure they exist and have data
+                    var fileCount = context.Files.Count();
+                    var chunkCount = context.Chunks.Count();
+                    
+                    var result = MessageBox.Show(
+                        $"Database validated successfully!\n\nFound:\n- {fileCount} files\n- {chunkCount} chunks\n\nUse this database?",
+                        "Database Validation",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information
+                    );
+                    
+                    return result == MessageBoxResult.Yes;
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Cannot connect to the selected database file. Please check if the file is valid and not corrupted.",
+                        "Database Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error
+                    );
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Error validating database: {ex.Message}\n\nThis may not be a valid PDF chunks database file.",
+                    "Database Validation Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+                return false;
             }
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(DatabasePathTextBox.Text))
+            if (string.IsNullOrWhiteSpace(DatabasePath) || DatabasePath == "Please select a database file...")
             {
-                MessageBox.Show("Please select a database location.", "Configuration Error", 
+                MessageBox.Show("Please select a database file.", "No Database Selected", 
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            DatabasePath = DatabasePathTextBox.Text;
-
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(DatabasePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            if (!File.Exists(DatabasePath))
             {
-                try
-                {
-                    Directory.CreateDirectory(directory);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to create directory: {ex.Message}", "Error", 
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
+                MessageBox.Show("The selected database file does not exist.", "File Not Found", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Validate the database one more time before accepting
+            if (!ValidateDatabase(DatabasePath))
+            {
+                return;
             }
 
             DialogResult = true;

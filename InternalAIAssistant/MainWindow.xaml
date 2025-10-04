@@ -76,12 +76,25 @@
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0" Background="#2d2d2d" Foreground="#cccccc">
+            <MenuItem Header="_File" Foreground="#cccccc">
+                <MenuItem Header="_Change Database..." Click="ChangeDatabase_Click" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="Exit_Click" />
+            </MenuItem>
+            <MenuItem Header="_Help" Foreground="#cccccc">
+                <MenuItem Header="_About" Click="About_Click" />
+            </MenuItem>
+        </Menu>
+
         <!-- Chat Area -->
-        <Border Grid.Row="0" Background="#252526" Margin="0">
+        <Border Grid.Row="1" Background="#252526" Margin="0">
             <ScrollViewer VerticalScrollBarVisibility="Auto" 
                          HorizontalScrollBarVisibility="Disabled" 
                          Padding="20"
@@ -124,7 +137,7 @@
         </Border>
 
         <!-- Input Area -->
-        <Border Grid.Row="1" 
+        <Border Grid.Row="2" 
                 Background="#1e1e1e" 
                 BorderBrush="#3e3e3e" 
                 BorderThickness="0,1,0,0"
