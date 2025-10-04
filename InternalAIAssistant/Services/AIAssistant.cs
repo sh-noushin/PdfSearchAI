@@ -318,40 +318,29 @@ namespace InternalAIAssistant.Services
     int topK = 5,
     string model = "llama3")
         {
-            // 1. Detect open/general questions (not related to documents)
-            if (IsGeneralQuestion(question))
-            {
-                // Only respond instantly for greetings and direct assistant questions
-                return (GetFriendlyResponse(question), string.Empty);
-            }
-
-            // 2. Get all chunks from database
+            // Always search chunks for every question
             var allChunks = await _databaseService.GetAllChunksAsync();
 
-            // 3. Search top relevant chunks with optional debug logging
             Action<string>? debugOutput = EnableDebugLogging 
                 ? msg => System.IO.File.AppendAllText("search-debug.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}\n")
                 : null;
 
+            // Limit chunk count and context size for performance
+            int fastTopK = Math.Min(topK, 2); // Only use top 2 chunks for context
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
-                    SemanticSearchService.Search(allChunks, queryEmbedding, topK),
+                    SemanticSearchService.Search(allChunks, queryEmbedding, fastTopK),
                 _ =>
-                    SimpleSearchService.Search(allChunks, question, topK, debugOutput)
+                    SimpleSearchService.Search(allChunks, question, fastTopK, debugOutput)
             };
 
-            // If no chunks match, still send question to LLM with empty context
-            var docNames = topChunks?.Select(c => c.FileName).Distinct().ToList() ?? new List<string>();
-            var contextSections = topChunks != null && topChunks.Any()
-                ? topChunks.GroupBy(c => c.FileName).Select(g => 
-                    $"[Source: {g.Key}, Pages: {string.Join(", ", g.Select(c => c.Page).Distinct())}]\n" + 
-                    string.Join("\n\n---\n\n", g.Select(c => c.Text))).ToList()
-                : new List<string>();
-
-            string context = contextSections.Any() ? string.Join("\n\n---\n\n", contextSections) : "";
-            if (context.Length > 2000)
-                context = context.Substring(0, 2000);
+            // Build context: concatenate only the actual chunk text, separated by ---
+            string context = topChunks != null && topChunks.Any()
+                ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
+                : "";
+            if (context.Length > 1500)
+                context = context.Substring(0, 1500);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
@@ -366,26 +355,20 @@ namespace InternalAIAssistant.Services
             }
             else
             {
-                prompt =
-                    "You are an expert software assistant. " +
-                    "Answer the user's question as helpfully as possible. " +
-                    "If you know the answer, explain it clearly. If you don't, say so honestly." +
-                    $"\n\nQuestion: {question}";
+                // No relevant chunk found, use helpful fallback
+                return ("I couldn't find an answer in your documents. Try asking about Python basics, machine learning fundamentals, or deep learning with PyTorch. If you need help with something else, please be more specific!", string.Empty);
             }
 
-            var request = new GenerateRequest
-            {
-                Model = model,
-                Prompt = prompt
-            };
-
-            string answer = "";
-            await foreach (var chunk in _client.GenerateAsync(request))
-            {
-                if (chunk?.Response != null)
-                    answer += chunk.Response;
-            }
-            answer = string.IsNullOrWhiteSpace(answer) ? "I couldn't find the answer in your documents." : answer.Trim();
+            // Run LLM call on a background thread to avoid UI blocking
+            string answer = await Task.Run(async () => {
+                string result = "";
+                await foreach (var chunk in _client.GenerateAsync(new GenerateRequest { Model = model, Prompt = prompt }))
+                {
+                    if (chunk?.Response != null)
+                        result += chunk.Response;
+                }
+                return result.Trim();
+            });
 
             // Sources: list document names with page numbers
             string sources = string.Empty;
@@ -398,8 +381,6 @@ namespace InternalAIAssistant.Services
                 sources = string.Join("\n", sourcesByFile);
             }
 
-            if (topChunks != null && topChunks.Any())
-                answer += $"\n\n[Found in: {topChunks.First().FileName}, Page {topChunks.First().Page}]";
             return (answer, sources);
         }
     private string GetFriendlyResponse(string question)
