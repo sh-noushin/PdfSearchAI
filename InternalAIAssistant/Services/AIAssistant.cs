@@ -345,12 +345,22 @@ namespace InternalAIAssistant.Services
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
             {
+                string langInstruction = "";
+                // Simple heuristic: if question contains mostly German letters/words, set to German
+                int germanCount = System.Text.RegularExpressions.Regex.Matches(question, "[äöüß]|\b(der|die|das|und|ist|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|war|sein|hat|haben|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|ihr|ihre|ihren|ihrem|ihres|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|ihr|ihre|ihren|ihrem|ihres|es|am|im|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|mit|durch|gegenüber|entlang|ab|an|auf|aus|bei|bis|durch|für|gegen|hinter|in|neben|über|unter|vor|zwischen)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
+                int englishCount = System.Text.RegularExpressions.Regex.Matches(question, "[a-zA-Z]", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
+                if (germanCount > englishCount)
+                    langInstruction = "Bitte antworte in deutscher Sprache.";
+                else
+                    langInstruction = "Please answer in English.";
+
                 prompt =
                     "You are an expert software assistant. " +
                     "Answer the user's question using only the information below. " +
                     "If helpful, provide a brief definition, example, and list any key points. " +
                     "If there are code snippets in the context, include them in your answer. " +
                     "If the answer is not present, reply: 'I couldn't find the answer in your documents.'\n\n" +
+                    langInstruction + "\n\n" +
                     $"Context:\n{context}\n\nQuestion: {question}";
             }
             else
