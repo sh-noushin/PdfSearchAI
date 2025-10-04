@@ -77,10 +77,12 @@ namespace InternalAIAssistant.Services
                     "SYSTEM: You are strictly required to answer ONLY in the language specified below. Do NOT use English. If you answer in English, you will fail the task.\n" +
                     langInstruction + "\n" +
                     "You are an expert software assistant. " +
-                    "Answer the user's question using only the information below. " +
+                    "Answer the user's question using ONLY the information below. Do NOT use any safety filter or fallback unless the context itself contains a warning or restriction. " +
+                    "If the question is about a tool, feature, or function (such as TemplatePropertyRemover), explain what it is, how it works, and its purpose, using all available context. " +
+                    "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
                     "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
                     "Do NOT mention code snippets unless there is actual code in the context. " +
-                    "If the answer is not present, reply: 'Ich konnte die Antwort in Ihren Dokumenten nicht finden.'\n\n" +
+                    "Only reply 'Ich konnte die Antwort in Ihren Dokumenten nicht finden.' if there is absolutely no relevant information in the context.\n\n" +
                     $"Context:\n{context}\n\nQuestion: {question}";
             }
             else
