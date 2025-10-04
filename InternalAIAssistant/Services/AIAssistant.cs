@@ -45,7 +45,7 @@ namespace InternalAIAssistant.Services
                 : null;
 
             // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 2); // Only use top 2 chunks for context
+            int fastTopK = Math.Min(topK, 5); // Use up to 5 chunks for context for more detail
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
@@ -58,8 +58,8 @@ namespace InternalAIAssistant.Services
             string context = topChunks != null && topChunks.Any()
                 ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
                 : "";
-            if (context.Length > 1500)
-                context = context.Substring(0, 1500);
+            if (context.Length > 3000)
+                context = context.Substring(0, 3000);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
