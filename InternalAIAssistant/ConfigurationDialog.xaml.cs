@@ -33,7 +33,8 @@ namespace InternalAIAssistant
 
             if (dialog.ShowDialog() == true)
             {
-                if (ValidateDatabase(dialog.FileName))
+                // Validate the database, but do not show confirmation dialog
+                if (ValidateDatabase(dialog.FileName, showConfirmation: false))
                 {
                     DatabasePathTextBox.Text = dialog.FileName;
                     DatabasePath = dialog.FileName;
@@ -41,7 +42,7 @@ namespace InternalAIAssistant
             }
         }
 
-        private bool ValidateDatabase(string databasePath)
+        private bool ValidateDatabase(string databasePath, bool showConfirmation = true)
         {
             try
             {
@@ -51,22 +52,22 @@ namespace InternalAIAssistant
                     .Options;
 
                 using var context = new PdfChunkDbContext(options);
-                
                 // Check if database can be opened and has required tables
                 if (context.Database.CanConnect())
                 {
                     // Try to query the tables to ensure they exist and have data
                     var fileCount = context.Files.Count();
                     var chunkCount = context.Chunks.Count();
-                    
-                    var result = MessageBox.Show(
-                        $"Database validated successfully!\n\nFound:\n- {fileCount} files\n- {chunkCount} chunks\n\nUse this database?",
-                        "Database Validation",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Information
-                    );
-                    
-                    return result == MessageBoxResult.Yes;
+                    if (showConfirmation)
+                    {
+                        MessageBox.Show(
+                            $"Database validated successfully!\n\nFound:\n- {fileCount} files\n- {chunkCount} chunks",
+                            "Database Validation",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information
+                        );
+                    }
+                    return true;
                 }
                 else
                 {
