@@ -120,7 +120,48 @@ namespace InternalAIAssistant.Services
                     {
                         fallbackMsg = $"I found the following relevant information in your documents:\n\n{summary}";
                     }
-                    return (fallbackMsg, string.Join("\n", topChunks.Select(c => $"- {c.FileName}").Distinct()));
+                    var normQuery = question.ToLowerInvariant();
+                    // Fuzzy match: allow up to 2 character differences for typo tolerance
+                    bool FuzzyContains(string text, string query)
+                    {
+                        text = text.ToLowerInvariant();
+                        query = query.ToLowerInvariant();
+                        if (text.Contains(query)) return true;
+                        // Split text into words and check Levenshtein distance
+                        var words = text.Split(new[] { ' ', '\n', '\r', '\t', '.', ',', ';', ':', '!', '?' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var word in words)
+                        {
+                            if (LevenshteinDistance(word, query) <= 2)
+                                return true;
+                        }
+                        return false;
+                    }
+
+                    int LevenshteinDistance(string s, string t)
+                    {
+                        if (string.IsNullOrEmpty(s)) return t.Length;
+                        if (string.IsNullOrEmpty(t)) return s.Length;
+                        int[,] d = new int[s.Length + 1, t.Length + 1];
+                        for (int i = 0; i <= s.Length; i++) d[i, 0] = i;
+                        for (int j = 0; j <= t.Length; j++) d[0, j] = j;
+                        for (int i = 1; i <= s.Length; i++)
+                        {
+                            for (int j = 1; j <= t.Length; j++)
+                            {
+                                int cost = (s[i - 1] == t[j - 1]) ? 0 : 1;
+                                d[i, j] = Math.Min(
+                                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                                    d[i - 1, j - 1] + cost);
+                            }
+                        }
+                        return d[s.Length, t.Length];
+                    }
+
+                    var relevantFileNames = groupedChunks
+                        .Where(gc => FuzzyContains(gc.Summary, normQuery))
+                        .Select(gc => $"- {gc.FileName}")
+                        .ToList();
+                    return (fallbackMsg, string.Join("\n", relevantFileNames));
                 }
                 // No relevant chunk found, use helpful fallback
                 return ("I couldn't find an answer in your documents. Please ask a question related to the content of your documents for best results.", string.Empty);

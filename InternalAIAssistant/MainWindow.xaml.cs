@@ -93,14 +93,7 @@ public partial class MainWindow : Window
                 Message = $"Connected to database. Found {chunkCount} chunks from {fileCount} files.\nRecent files (last 7 days): {recentFiles.Count}"
             });
             
-            if (recentFiles.Any())
-            {
-                viewModel.Messages.Add(new Models.ChatMessage 
-                { 
-                    Sender = "System", 
-                    Message = $"Recent files:\n{string.Join("\n", recentFiles.Take(5).Select(f => $"- {f}"))}"
-                });
-            }
+            
         }
         catch (Exception ex)
         {
