@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using InternalAIAssistant.Helpers;
 using OllamaSharp;
@@ -29,7 +30,7 @@ namespace InternalAIAssistant.Services
             _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
             var httpClient = new System.Net.Http.HttpClient
             {
-                Timeout = TimeSpan.FromSeconds(120),
+                Timeout = TimeSpan.FromSeconds(300), // Increased to 5 minutes for better stability
                 BaseAddress = new Uri(ollamaHost)
             };
             _client = new OllamaApiClient(httpClient, ollamaHost);
@@ -40,87 +41,169 @@ namespace InternalAIAssistant.Services
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
     int topK = 5,
-    string model = "phi3")
+    string model = "phi3",
+    CancellationToken cancellationToken = default)
         {
-            // Always search chunks for every question
-            var allChunks = await _databaseService.GetAllChunksAsync();
-
-            Action<string>? debugOutput = EnableDebugLogging 
-                ? msg => System.IO.File.AppendAllText("search-debug.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}\n")
-                : null;
-
-            // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 20); // Use up to 20 chunks for more complete answers
-            List<DocumentChunk> topChunks = searchMode switch
+            try
             {
-                SearchMode.Semantic when queryEmbedding != null =>
-                    SemanticSearchService.Search(allChunks, queryEmbedding, fastTopK),
-                _ =>
-                    SimpleSearchService.Search(allChunks, question, fastTopK, debugOutput)
-            };
-
-            // Build context: concatenate only the actual chunk text, separated by ---
-            string context = topChunks != null && topChunks.Any()
-                ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
-                : "";
-            if (context.Length > 16000)
-                context = context.Substring(0, 16000);
-
-            string prompt;
-            if (!string.IsNullOrWhiteSpace(context))
-            {
-                string langInstruction = "";
-                // Only detect German or default to English
-                if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
-                    System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                // Validate input
+                if (string.IsNullOrWhiteSpace(question))
                 {
-                    langInstruction = "WICHTIG: Sie MÜSSEN ausschließlich auf Deutsch antworten. Verwenden Sie KEINE englischen Wörter oder Sätze. Antworten Sie NUR auf Deutsch."; // German
+                    return ("Please enter a question.", string.Empty);
+                }
+
+                // Always search chunks for every question with timeout
+                List<DocumentChunk> allChunks;
+                try
+                {
+                    using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, dbCts.Token);
+                    allChunks = await _databaseService.GetAllChunksAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    return ("Database query timed out. Please try again.", string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    return ($"Error accessing database: {ex.Message}", string.Empty);
+                }
+
+                if (allChunks == null || allChunks.Count == 0)
+                {
+                    return ("No documents found in the database. Please ensure PDFs have been processed by PdfChunkService.", string.Empty);
+                }
+
+                Action<string>? debugOutput = EnableDebugLogging 
+                    ? msg => System.IO.File.AppendAllText("search-debug.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}\n")
+                    : null;
+
+                // Limit chunk count and context size for performance
+                int fastTopK = Math.Min(topK, 20); // Use up to 20 chunks for more complete answers
+                List<DocumentChunk> topChunks;
+                
+                try
+                {
+                    topChunks = searchMode switch
+                    {
+                        SearchMode.Semantic when queryEmbedding != null =>
+                            SemanticSearchService.Search(allChunks, queryEmbedding, fastTopK),
+                        _ =>
+                            SimpleSearchService.Search(allChunks, question, fastTopK, debugOutput)
+                    };
+                }
+                catch (Exception ex)
+                {
+                    return ($"Error during search: {ex.Message}", string.Empty);
+                }
+
+                // Build context: concatenate only the actual chunk text, separated by ---
+                string context = topChunks != null && topChunks.Any()
+                    ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
+                    : "";
+                if (context.Length > 16000)
+                    context = context.Substring(0, 16000);
+
+                string prompt;
+                if (!string.IsNullOrWhiteSpace(context))
+                {
+                    string langInstruction = "";
+                    
+                    // Detect Persian/Farsi
+                    if (System.Text.RegularExpressions.Regex.IsMatch(question, @"[\u0600-\u06FF]"))
+                    {
+                        langInstruction = "مهم: شما باید فقط به زبان فارسی پاسخ دهید. از کلمات یا جملات انگلیسی استفاده نکنید. فقط به فارسی پاسخ دهید."; // Persian
+                    }
+                    // Detect German
+                    else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
+                        System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    {
+                        langInstruction = "WICHTIG: Sie MÜSSEN ausschließlich auf Deutsch antworten. Verwenden Sie KEINE englischen Wörter oder Sätze. Antworten Sie NUR auf Deutsch."; // German
+                    }
+                    else
+                    {
+                        langInstruction = "IMPORTANT: Please answer in English.";
+                    }
+
+                    prompt =
+                        "SYSTEM: You must answer ONLY using the information in the context below. Ignore your own training data and do NOT use any fallback or safety filter unless the context itself contains a warning. Match the user's language exactly.\n" +
+                        langInstruction + "\n" +
+                        "You are an expert software assistant. " +
+                        "If the question is about a tool, feature, or function, explain what it is, how it works, and its purpose, using all available context. " +
+                        "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
+                        "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
+                        "Do NOT mention code snippets unless there is actual code in the context. " +
+                        "Only reply 'I couldn't find the answer in your documents.' if there is absolutely no relevant information in the context.\n\n" +
+                        $"Context:\n{context}\n\nQuestion: {question}";
                 }
                 else
                 {
-                    langInstruction = "IMPORTANT: Please answer in English.";
+                    // No relevant chunk found, use helpful fallback
+                    return ("I couldn't find an answer in your documents. Please ask a question related to the content of your documents for best results.", string.Empty);
                 }
 
-                prompt =
-                    "SYSTEM: You must answer ONLY using the information in the context below. Ignore your own training data and do NOT use any fallback or safety filter unless the context itself contains a warning. Match the user's language exactly.\n" +
-                    langInstruction + "\n" +
-                    "You are an expert software assistant. " +
-                    "If the question is about a tool, feature, or function, explain what it is, how it works, and its purpose, using all available context. " +
-                    "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
-                    "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
-                    "Do NOT mention code snippets unless there is actual code in the context. " +
-                    "Only reply 'I couldn't find the answer in your documents.' if there is absolutely no relevant information in the context.\n\n" +
-                    $"Context:\n{context}\n\nQuestion: {question}";
-            }
-            else
-            {
-                // No relevant chunk found, use helpful fallback
-                return ("I couldn't find an answer in your documents. Please ask a question related to the content of your documents for best results.", string.Empty);
-            }
-
-            // Run LLM call on a background thread to avoid UI blocking
-            string answer = await Task.Run(async () => {
-                string result = "";
-                await foreach (var chunk in _client.GenerateAsync(new GenerateRequest { Model = model, Prompt = prompt }))
+                // Run LLM call with timeout and cancellation support
+                string answer;
+                try
                 {
-                    if (chunk?.Response != null)
-                        result += chunk.Response;
+                    using var llmCts = new CancellationTokenSource(TimeSpan.FromSeconds(180)); // 3 minutes timeout
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, llmCts.Token);
+                    
+                    answer = await Task.Run(async () => {
+                        string result = "";
+                        try
+                        {
+                            await foreach (var chunk in _client.GenerateAsync(new GenerateRequest { Model = model, Prompt = prompt }))
+                            {
+                                linkedCts.Token.ThrowIfCancellationRequested();
+                                
+                                if (chunk?.Response != null)
+                                    result += chunk.Response;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new InvalidOperationException($"LLM generation failed: {ex.Message}", ex);
+                        }
+                        return result.Trim();
+                    }, linkedCts.Token);
                 }
-                return result.Trim();
-            });
+                catch (OperationCanceledException)
+                {
+                    return ("The AI request timed out or was cancelled. Please try again with a shorter question or check if Ollama is running.", string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    return ($"Error generating answer: {ex.Message}. Please ensure Ollama is running and the '{model}' model is available.", string.Empty);
+                }
 
-            // Sources: list document names with page numbers
-            string sources = string.Empty;
-            if (topChunks != null && topChunks.Any())
-            {
-                var sourcesByFile = topChunks
-                    .GroupBy(c => c.FileName)
-                    .Select(g => $"- {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
-                    .ToList();
-                sources = string.Join("\n", sourcesByFile);
+                // Validate answer
+                if (string.IsNullOrWhiteSpace(answer))
+                {
+                    return ("The AI could not generate a response. Please try rephrasing your question.", string.Empty);
+                }
+
+                // Sources: list document names with page numbers
+                string sources = string.Empty;
+                if (topChunks != null && topChunks.Any())
+                {
+                    var sourcesByFile = topChunks
+                        .GroupBy(c => c.FileName)
+                        .Select(g => $"- {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
+                        .ToList();
+                    sources = string.Join("\n", sourcesByFile);
+                }
+
+                return (answer, sources);
             }
-
-            return (answer, sources);
+            catch (Exception ex)
+            {
+                return ($"Unexpected error: {ex.Message}", string.Empty);
+            }
         }
     private string GetFriendlyResponse(string question)
     {
@@ -156,42 +239,88 @@ namespace InternalAIAssistant.Services
     public async Task<(string Answer, string Sources)> SummarizeDocumentAsync(
         string fileName,
         int maxPages = 10,
-        string model = "phi3")
+        string model = "phi3",
+        CancellationToken cancellationToken = default)
     {
-        // Find all chunks for the file from database
-        var fileChunks = await _databaseService.GetChunksByFileAsync(fileName);
-        fileChunks = fileChunks
-            .OrderBy(c => c.Page)
-            .Take(maxPages)
-            .ToList();
-
-        if (!fileChunks.Any())
-            return ("No content found in the selected document.", "");
-
-        var contextSections = fileChunks.Select(c =>
-            $"[Source: {c.FileName}, page {c.Page}]\n{c.Text}").ToList();
-
-        string context = string.Join("\n\n---\n\n", contextSections);
-
-        string prompt =
-            $"Summarize and explain the following document using only the provided context. " +
-            $"If the context is too long, focus on the main ideas and key points.\n\nContext:\n{context}";
-
-        var request = new GenerateRequest
+        try
         {
-            Model = model,
-            Prompt = prompt
-        };
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return ("Please provide a file name.", string.Empty);
+            }
 
-        string answer = "";
-        await foreach (var chunk in _client.GenerateAsync(request))
-        {
-            if (chunk?.Response != null)
-                answer += chunk.Response;
+            // Find all chunks for the file from database with timeout
+            List<DocumentChunk> fileChunks;
+            try
+            {
+                using var dbCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, dbCts.Token);
+                fileChunks = await _databaseService.GetChunksByFileAsync(fileName);
+            }
+            catch (OperationCanceledException)
+            {
+                return ("Database query timed out. Please try again.", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                return ($"Error accessing database: {ex.Message}", string.Empty);
+            }
+
+            fileChunks = fileChunks
+                .OrderBy(c => c.Page)
+                .Take(maxPages)
+                .ToList();
+
+            if (!fileChunks.Any())
+                return ($"No content found for '{fileName}' in the database.", "");
+
+            var contextSections = fileChunks.Select(c =>
+                $"[Source: {c.FileName}, page {c.Page}]\n{c.Text}").ToList();
+
+            string context = string.Join("\n\n---\n\n", contextSections);
+
+            string prompt =
+                $"Summarize and explain the following document using only the provided context. " +
+                $"If the context is too long, focus on the main ideas and key points.\n\nContext:\n{context}";
+
+            var request = new GenerateRequest
+            {
+                Model = model,
+                Prompt = prompt
+            };
+
+            string answer;
+            try
+            {
+                using var llmCts = new CancellationTokenSource(TimeSpan.FromSeconds(180)); // 3 minutes timeout
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, llmCts.Token);
+                
+                answer = "";
+                await foreach (var chunk in _client.GenerateAsync(request))
+                {
+                    linkedCts.Token.ThrowIfCancellationRequested();
+                    
+                    if (chunk?.Response != null)
+                        answer += chunk.Response;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return ("The summarization request timed out or was cancelled. Please try again.", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                return ($"Error generating summary: {ex.Message}. Please ensure Ollama is running.", string.Empty);
+            }
+
+            answer = string.IsNullOrWhiteSpace(answer) ? "No summary could be generated." : answer.Trim();
+            string sources = string.Join("\n", fileChunks.Select(c => $"- {c.FileName}, page {c.Page}"));
+            return (answer, sources);
         }
-        answer = string.IsNullOrWhiteSpace(answer) ? "No summary could be generated." : answer.Trim();
-        string sources = string.Join("\n", fileChunks.Select(c => $"- {c.FileName}, page {c.Page}"));
-        return (answer, sources);
+        catch (Exception ex)
+        {
+            return ($"Unexpected error: {ex.Message}", string.Empty);
+        }
     }
 }
 

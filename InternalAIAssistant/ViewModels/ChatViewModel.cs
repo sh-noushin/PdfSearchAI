@@ -129,6 +129,7 @@
 
 
 
+using System;
 using InternalAIAssistant.Helpers;
 using InternalAIAssistant.Models;
 using InternalAIAssistant.Services;
@@ -183,15 +184,32 @@ namespace InternalAIAssistant.ViewModels
             Messages.Add(new ChatMessage { Sender = "User", Message = question });
             UserInput = string.Empty;
             IsBusy = true;
+            
             var thinkingMsg = new ChatMessage { Sender = "AI", Message = "AI is thinking..." };
             Messages.Add(thinkingMsg);
+            
             try
             {
+                var startTime = DateTime.Now;
                 var (answer, sources) = await _assistant.AskAsync(question);
+                var elapsed = (DateTime.Now - startTime).TotalSeconds;
+                
                 Messages.Remove(thinkingMsg);
                 Messages.Add(new ChatMessage { Sender = "AI", Message = answer });
+                
                 if (!string.IsNullOrWhiteSpace(sources))
                     Messages.Add(new ChatMessage { Sender = "AI", Message = $"Sources:\n{sources}" });
+                    
+                // Add performance indicator for debugging
+                if (elapsed > 30)
+                {
+                    Messages.Add(new ChatMessage { Sender = "System", Message = $"Response time: {elapsed:F1}s (Consider using a faster model if this is too slow)" });
+                }
+            }
+            catch (Exception ex)
+            {
+                Messages.Remove(thinkingMsg);
+                Messages.Add(new ChatMessage { Sender = "AI", Message = $"Error: {ex.Message}" });
             }
             finally
             {
