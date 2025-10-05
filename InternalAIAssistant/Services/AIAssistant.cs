@@ -29,7 +29,8 @@ namespace InternalAIAssistant.Services
             _databaseService = databaseService ?? throw new ArgumentNullException(nameof(databaseService));
             var httpClient = new System.Net.Http.HttpClient
             {
-                Timeout = TimeSpan.FromSeconds(120) // 2 minute timeout to prevent long waits
+                Timeout = TimeSpan.FromSeconds(120),
+                BaseAddress = new Uri(ollamaHost)
             };
             _client = new OllamaApiClient(httpClient, ollamaHost);
         }
@@ -49,7 +50,7 @@ namespace InternalAIAssistant.Services
                 : null;
 
             // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 5); // Use up to 5 chunks for context for more detail
+            int fastTopK = Math.Min(topK, 3); // Use up to 3 chunks for better answer quality
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
@@ -87,11 +88,10 @@ namespace InternalAIAssistant.Services
                 }
 
                 prompt =
-                    "SYSTEM: You are strictly required to answer ONLY in the language specified below. Match the user's language exactly.\n" +
+                    "SYSTEM: You must answer ONLY using the information in the context below. Ignore your own training data and do NOT use any fallback or safety filter unless the context itself contains a warning. Match the user's language exactly.\n" +
                     langInstruction + "\n" +
                     "You are an expert software assistant. " +
-                    "Answer the user's question using ONLY the information below. Do NOT use any safety filter or fallback unless the context itself contains a warning or restriction. " +
-                    "If the question is about a tool, feature, or function (such as TemplatePropertyRemover), explain what it is, how it works, and its purpose, using all available context. " +
+                    "If the question is about a tool, feature, or function, explain what it is, how it works, and its purpose, using all available context. " +
                     "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
                     "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
                     "Do NOT mention code snippets unless there is actual code in the context. " +
