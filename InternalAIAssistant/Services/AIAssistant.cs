@@ -39,7 +39,7 @@ namespace InternalAIAssistant.Services
     string question,
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
-    int topK = 5,
+    int topK = 10,
     string model = "phi3")
         {
             // Always search chunks for every question
@@ -50,7 +50,7 @@ namespace InternalAIAssistant.Services
                 : null;
 
             // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 3); // Use up to 3 chunks for better answer quality
+            int fastTopK = Math.Min(topK, 10); // Use up to 10 chunks for better answer quality
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
@@ -70,15 +70,9 @@ namespace InternalAIAssistant.Services
             if (!string.IsNullOrWhiteSpace(context))
             {
                 string langInstruction = "";
-                // Improved language detection: detect Persian, German, or default to English
-                // Persian detection - check for Persian Unicode characters
-                if (System.Text.RegularExpressions.Regex.IsMatch(question, "[\u0600-\u06FF]"))
-                {
-                    langInstruction = "مهم: شما باید به زبان فارسی پاسخ دهید. از کلمات یا جملات انگلیسی استفاده نکنید. فقط به زبان فارسی پاسخ دهید."; // Persian
-                }
-                // German detection - check for German characters and common words
-                else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
-                         System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                // Only detect German or default to English
+                if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
+                    System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 {
                     langInstruction = "WICHTIG: Sie MÜSSEN ausschließlich auf Deutsch antworten. Verwenden Sie KEINE englischen Wörter oder Sätze. Antworten Sie NUR auf Deutsch."; // German
                 }
@@ -88,18 +82,46 @@ namespace InternalAIAssistant.Services
                 }
 
                 prompt =
-                    "SYSTEM: You must answer ONLY using the information in the context below. Ignore your own training data and do NOT use any fallback or safety filter unless the context itself contains a warning. Match the user's language exactly.\n" +
-                    langInstruction + "\n" +
-                    "You are an expert software assistant. " +
-                    "If the question is about a tool, feature, or function, explain what it is, how it works, and its purpose, using all available context. " +
-                    "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
-                    "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
-                    "Do NOT mention code snippets unless there is actual code in the context. " +
-                    "Only reply 'I couldn't find the answer in your documents.' if there is absolutely no relevant information in the context.\n\n" +
-                    $"Context:\n{context}\n\nQuestion: {question}";
+                    "SYSTEM: You are an expert assistant that answers questions based ONLY on the provided context below.\n" +
+                    langInstruction + "\n\n" +
+                    "CRITICAL INSTRUCTIONS:\n" +
+                    "1. Answer ONLY using information from the context below\n" +
+                    "2. Match the user's question language (German questions → German answers, English questions → English answers)\n" +
+                    "3. Be comprehensive: use ALL relevant information from the context\n" +
+                    "4. Structure your answer clearly with key points\n" +
+                    "5. If the question is about concepts, definitions, or processes, explain them thoroughly\n" +
+                    "6. Include specific details, examples, and explanations found in the context\n" +
+                    "7. If multiple aspects are mentioned in context, cover all of them\n" +
+                    "8. ONLY say 'I couldn't find the answer' if there is NO relevant information at all\n\n" +
+                    $"CONTEXT:\n{context}\n\nQUESTION: {question}\n\nANSWER:";
             }
             else
             {
+                // If any chunks matched, summarize them for the user
+                if (topChunks != null && topChunks.Any())
+                {
+                    // Group chunks by file and summarize all relevant chunks together
+                    var groupedChunks = topChunks
+                        .GroupBy(c => c.FileName)
+                        .Select(g => new {
+                            FileName = g.Key,
+                            Summary = string.Join("\n\n---\n\n", g.Select(c => c.Text))
+                        })
+                        .ToList();
+
+                    string summary = string.Join("\n\n====\n\n", groupedChunks.Select(gc => $"{gc.FileName}:\n{gc.Summary}"));
+                    string fallbackMsg;
+                    if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
+                        System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    {
+                        fallbackMsg = $"Ich habe die folgenden relevanten Informationen in Ihren Dokumenten gefunden:\n\n{summary}";
+                    }
+                    else
+                    {
+                        fallbackMsg = $"I found the following relevant information in your documents:\n\n{summary}";
+                    }
+                    return (fallbackMsg, string.Join("\n", topChunks.Select(c => $"- {c.FileName}").Distinct()));
+                }
                 // No relevant chunk found, use helpful fallback
                 return ("I couldn't find an answer in your documents. Please ask a question related to the content of your documents for best results.", string.Empty);
             }
