@@ -50,7 +50,7 @@ namespace InternalAIAssistant.Services
                 : null;
 
             // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 3); // Use up to 3 chunks for better answer quality
+            int fastTopK = Math.Min(topK, 20); // Use up to 20 chunks for more complete answers
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
@@ -63,22 +63,16 @@ namespace InternalAIAssistant.Services
             string context = topChunks != null && topChunks.Any()
                 ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
                 : "";
-            if (context.Length > 2000)
-                context = context.Substring(0, 2000);
+            if (context.Length > 16000)
+                context = context.Substring(0, 16000);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
             {
                 string langInstruction = "";
-                // Improved language detection: detect Persian, German, or default to English
-                // Persian detection - check for Persian Unicode characters
-                if (System.Text.RegularExpressions.Regex.IsMatch(question, "[\u0600-\u06FF]"))
-                {
-                    langInstruction = "مهم: شما باید به زبان فارسی پاسخ دهید. از کلمات یا جملات انگلیسی استفاده نکنید. فقط به زبان فارسی پاسخ دهید."; // Persian
-                }
-                // German detection - check for German characters and common words
-                else if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
-                         System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                // Only detect German or default to English
+                if (System.Text.RegularExpressions.Regex.IsMatch(question, "[äöüßÄÖÜ]") ||
+                    System.Text.RegularExpressions.Regex.IsMatch(question, @"\b(der|die|das|und|ist|sind|ein|eine|nicht|mit|auf|zu|für|im|dem|den|des|als|bei|nach|von|wie|man|aber|auch|nur|noch|schon|wird|werden|wurde|war|sein|hat|haben|hatte|dass|oder|wenn|was|wer|wo|wann|welche|dies|dieser|dieses|diese|ihre|ihren|ihrem|ihres|ihm|ihn|wir|uns|unser|unserer|unserem|unseren|unseres|sie|ihnen|es|am|um|zum|vom|beim|aus|ins|ans|aufs|über|unter|vor|hinter|zwischen|gegen|ohne|durch)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 {
                     langInstruction = "WICHTIG: Sie MÜSSEN ausschließlich auf Deutsch antworten. Verwenden Sie KEINE englischen Wörter oder Sätze. Antworten Sie NUR auf Deutsch."; // German
                 }
