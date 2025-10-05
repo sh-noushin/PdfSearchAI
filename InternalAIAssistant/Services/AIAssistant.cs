@@ -120,8 +120,8 @@ namespace InternalAIAssistant.Services
             if (topChunks != null && topChunks.Any())
             {
                 var sourcesByFile = topChunks
-                    .GroupBy(c => c.FileName)
-                    .Select(g => $"- {g.Key} (Pages: {string.Join(", ", g.Select(c => c.Page).Distinct().OrderBy(p => p))})")
+                    .Select(c => $"- {c.FileName}")
+                    .Distinct()
                     .ToList();
                 sources = string.Join("\n", sourcesByFile);
             }
