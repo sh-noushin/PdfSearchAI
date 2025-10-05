@@ -39,7 +39,7 @@ namespace InternalAIAssistant.Services
     string question,
     SearchMode searchMode = SearchMode.Simple,
     float[]? queryEmbedding = null,
-    int topK = 5,
+    int topK = 10, // Increased from 5 to 10 for better context coverage
     string model = "phi3")
         {
             // Always search chunks for every question
@@ -49,8 +49,9 @@ namespace InternalAIAssistant.Services
                 ? msg => System.IO.File.AppendAllText("search-debug.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}\n")
                 : null;
 
-            // Limit chunk count and context size for performance
-            int fastTopK = Math.Min(topK, 20); // Use up to 20 chunks for more complete answers
+            // Increase chunk count for better answer accuracy (was 20, now 30)
+            // More chunks = more context = better answers, especially for complex questions
+            int fastTopK = Math.Min(topK, 30);
             List<DocumentChunk> topChunks = searchMode switch
             {
                 SearchMode.Semantic when queryEmbedding != null =>
@@ -63,8 +64,11 @@ namespace InternalAIAssistant.Services
             string context = topChunks != null && topChunks.Any()
                 ? string.Join("\n\n---\n\n", topChunks.Select(c => c.Text))
                 : "";
-            if (context.Length > 16000)
-                context = context.Substring(0, 16000);
+            
+            // Increase context limit for more comprehensive answers (was 16000, now 24000)
+            // Phi3 can handle ~4K tokens input, ~24K chars ≈ 6K tokens with headroom
+            if (context.Length > 24000)
+                context = context.Substring(0, 24000);
 
             string prompt;
             if (!string.IsNullOrWhiteSpace(context))
@@ -82,15 +86,20 @@ namespace InternalAIAssistant.Services
                 }
 
                 prompt =
-                    "SYSTEM: You must answer ONLY using the information in the context below. Ignore your own training data and do NOT use any fallback or safety filter unless the context itself contains a warning. Match the user's language exactly.\n" +
-                    langInstruction + "\n" +
-                    "You are an expert software assistant. " +
-                    "If the question is about a tool, feature, or function, explain what it is, how it works, and its purpose, using all available context. " +
-                    "Summarize and describe the tool as if explaining to a user unfamiliar with it. " +
-                    "Explain the process in detail, referencing any dialog windows, steps, or instructions shown in the context. " +
-                    "Do NOT mention code snippets unless there is actual code in the context. " +
-                    "Only reply 'I couldn't find the answer in your documents.' if there is absolutely no relevant information in the context.\n\n" +
-                    $"Context:\n{context}\n\nQuestion: {question}";
+                    "SYSTEM: You are an expert assistant that answers questions based ONLY on the provided context below.\n" +
+                    langInstruction + "\n\n" +
+                    "CRITICAL INSTRUCTIONS:\n" +
+                    "1. Answer ONLY using information from the context below\n" +
+                    "2. Match the user's question language (German questions → German answers, English questions → English answers)\n" +
+                    "3. Be comprehensive: use ALL relevant information from the context\n" +
+                    "4. Structure your answer clearly with key points\n" +
+                    "5. If the question is about concepts, definitions, or processes, explain them thoroughly\n" +
+                    "6. Include specific details, examples, and explanations found in the context\n" +
+                    "7. If multiple aspects are mentioned in context, cover all of them\n" +
+                    "8. ONLY say 'I couldn't find the answer' if there is NO relevant information at all\n\n" +
+                    $"CONTEXT:\n{context}\n\n" +
+                    $"QUESTION: {question}\n\n" +
+                    "ANSWER:";
             }
             else
             {
